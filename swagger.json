@@ -1,0 +1,365 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Payment Aggregator API",
+    "version": "1.0.0",
+    "description": "Payment processing system API documentation"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/api/config": {
+      "post": {
+        "summary": "Set payment system configuration",
+        "tags": [
+          "Configuration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "A": {
+                    "type": "number",
+                    "description": "Fixed fee amount"
+                  },
+                  "B": {
+                    "type": "number",
+                    "description": "Percentage fee"
+                  },
+                  "D": {
+                    "type": "number",
+                    "description": "Temporary hold percentage"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configuration updated successfully"
+          },
+          "400": {
+            "description": "Invalid configuration values"
+          }
+        }
+      }
+    },
+    "/api/merchants": {
+      "post": {
+        "summary": "Add a new merchant",
+        "tags": [
+          "Merchants"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Merchant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merchant created successfully"
+          },
+          "400": {
+            "description": "Invalid merchant data"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all merchants",
+        "tags": [
+          "Merchants"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of merchants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "commission_percent": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments": {
+      "post": {
+        "summary": "Create a new payment",
+        "tags": [
+          "Payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Payment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment created successfully"
+          },
+          "400": {
+            "description": "Invalid payment data"
+          }
+        }
+      },
+      "get": {
+        "summary": "List payments with optional filters",
+        "tags": [
+          "Payments"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "merchantId",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filter by merchant ID"
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "processed",
+                "executed",
+                "paid"
+              ]
+            },
+            "description": "Filter by payment status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of payments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "merchant_id": {
+                        "type": "integer"
+                      },
+                      "amount": {
+                        "type": "number"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/process": {
+      "post": {
+        "summary": "Process payments",
+        "tags": [
+          "Payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paymentIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "description": "Array of payment IDs to process"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payments updated to processed"
+          },
+          "400": {
+            "description": "Invalid paymentIds"
+          }
+        }
+      }
+    },
+    "/api/payments/execute": {
+      "post": {
+        "summary": "Update payments status to 'executed'",
+        "tags": [
+          "Payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paymentIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "description": "Array of payment IDs to execute"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payments updated to executed"
+          },
+          "400": {
+            "description": "Invalid paymentIds"
+          }
+        }
+      }
+    },
+    "/api/payments/payout": {
+      "post": {
+        "summary": "Process payout for a merchant",
+        "tags": [
+          "Payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "merchantId": {
+                    "type": "integer",
+                    "description": "ID of the merchant"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payout processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalPayout": {
+                      "type": "number",
+                      "description": "Total payout amount"
+                    },
+                    "payments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "description": "Payment ID"
+                          },
+                          "payoutAmount": {
+                            "type": "number",
+                            "description": "Payout amount for the payment"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid merchantId"
+          },
+          "404": {
+            "description": "Merchant not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Merchant": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Merchant name"
+          },
+          "commission": {
+            "type": "number",
+            "description": "Merchant commission rate"
+          }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  },
+  "tags": []
+}

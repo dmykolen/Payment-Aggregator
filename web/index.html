@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Aggregator Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@3.9.4/dist/full.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/json-enc.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+
+  <style>
+    .gradient-animate {
+      background: linear-gradient(270deg, #4f46e5, #7c3aed, #2563eb);
+      background-size: 600% 600%;
+      animation: gradientShift 8s ease infinite;
+    }
+
+    @keyframes gradientShift {
+      0% {
+        background-position: 0% 50%
+      }
+
+      50% {
+        background-position: 100% 50%
+      }
+
+      100% {
+        background-position: 0% 50%
+      }
+    }
+
+    .status-badge {
+      @apply px-2 py-1 rounded-full text-xs font-semibold;
+    }
+
+    .status-accepted {
+      @apply bg-blue-500 text-white;
+    }
+
+    .status-processed {
+      @apply bg-yellow-500 text-black;
+    }
+
+    .status-executed {
+      @apply bg-green-500 text-white;
+    }
+
+    .status-paid {
+      @apply bg-purple-500 text-white;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+  <div id="toast-container" class="toast toast-bottom toast-center z-50"></div>
+  <!-- Navigation -->
+  <nav class="gradient-animate p-4 shadow-lg backdrop-blur-lg sticky top-0 z-50">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-2xl font-bold text-white">Payment Aggregator</h1>
+      <div class="tabs tabs-boxed bg-opacity-20">
+        <a class="tab tab-active" href="#dashboard-stats">Dashboard</a>
+        <a class="tab" href="#merchants-section">Merchants</a>
+        <a class="tab" href="#payments-section">Payments</a>
+        <!-- <a class="tab" href="#config-section">Config</a> -->
+      </div>
+    </div>
+  </nav>
+
+  <script>
+    $(".tab").on("click", function () {
+      $(".tab").removeClass("tab-active");
+      $(this).addClass("tab-active");
+
+      // Scroll to the target section smoothly
+      const target = $(this).attr("href");
+      $("html, body").animate({
+        scrollTop: $(target).offset().top - 100
+      }, 500);
+    });
+  </script>
+
+  <div class="container mx-auto p-6">
+    <!-- Dashboard Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8" id="dashboard-stats">
+      <div class="stat bg-base-200 rounded-box shadow-xl">
+        <div class="stat-title">Total Merchants</div>
+        <div class="stat-value text-primary" id="merchant-count">0</div>
+      </div>
+      <div class="stat bg-base-200 rounded-box shadow-xl">
+        <div class="stat-title">Active Payments</div>
+        <div class="stat-value text-secondary" id="payment-count">0</div>
+      </div>
+      <div class="stat bg-base-200 rounded-box shadow-xl">
+        <div class="stat-title">Total Amount</div>
+        <div class="stat-value text-accent" id="total-amount">$0</div>
+      </div>
+      <div class="stat bg-base-200 rounded-box shadow-xl">
+        <div class="stat-title">Pending Payouts</div>
+        <div class="stat-value text-warning" id="pending-payouts">0</div>
+      </div>
+
+      <!-- Current Configuration Display -->
+      <div class="col-span-full">
+        <div class="card bg-base-100 shadow-xl" hx-get="/api/config" hx-trigger="load, refreshConfigs from:body" hx-swap="none">
+          <div class="card-body">
+            <div class="flex">
+              <h3 class="card-title text-sm opacity-70">Current Configuration</h3>
+              <button onclick="toggleConfigEdit()" class="btn btn-sm btn-ghost">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            </div>
+            <div id="config-display">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="stat px-3 py-1">
+                  <div class="stat-title text-xs">Fixed Fee (A)</div>
+                  <div class="stat-value text-xs font-mono" id="config-a">$0.00</div>
+                </div>
+                <div class="stat px-3 py-1">
+                  <div class="stat-title text-xs">Percentage Fee (B)</div>
+                  <div class="stat-value text-xs font-mono" id="config-b">0.00%</div>
+                </div>
+                <div class="stat px-3 py-1">
+                  <div class="stat-title text-xs">Hold Amount (D)</div>
+                  <div class="stat-value text-xs font-mono" id="config-d">0.00%</div>
+                </div>
+              </div>
+            </div>
+            <div id="config-edit" class="bg-base-200 shadow-xl backdrop-blur-sm p-2 rounded-box hidden">
+              <form class="grid grid-cols-1 md:grid-cols-3 gap-4" hx-post="/api/config" hx-ext="json-enc" hx-trigger="submit" hx-swap="none" hx-on::config-request="
+                const params = event.detail.parameters;
+                params.A = parseFloat(params.A);
+                params.B = parseFloat(params.B);
+                params.D = parseFloat(params.D);
+              " hx-on::after-request="
+                if(event.detail.successful) {
+                  showToast('Configuration updated successfully');
+                  htmx.trigger('body', 'refreshConfigs');
+                } else {
+                  showToast('Failed to update configuration', 'error');
+                }">
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text">Fixed Fee (A)</span>
+                  </label>
+                  <label class="input-group">
+                    <span>$</span>
+                    <input type="number" name="A" required min="0" step="0.01" placeholder="0.00" class="input input-bordered input-primary w-full" aria-label="Fixed fee amount">
+                  </label>
+                </div>
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text">Percentage Fee (B)</span>
+                  </label>
+                  <label class="input-group">
+                    <input type="number" name="B" required min="0" max="100" step="0.01" placeholder="0.00" class="input input-bordered input-primary w-full" aria-label="Percentage fee">
+                    <span>%</span>
+                  </label>
+                </div>
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text">Hold Percentage (D)</span>
+                    <!-- <span class="label-text label-text-alt text-opacity-60">Temporary hold %</span> -->
+                  </label>
+                  <label class="input-group">
+                    <input type="number" name="D" required min="0" max="100" step="0.01" placeholder="0.00" class="input input-bordered input-primary w-full" aria-label="Hold percentage">
+                    <span>%</span>
+                  </label>
+                </div>
+                <!-- <div class="col-span-full">
+                            <div class="alert bg-base-300 shadow-lg mb-4">
+                              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-info shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <div>
+                                <h3 class="font-bold">Fee Structure</h3>
+                                <div class="text-sm">Total Fee = Fixed Fee (A) + Percentage Fee (B) × Amount + Hold (D) × Amount</div>
+                              </div>
+                            </div>
+                          </div> -->
+                <div class="col-span-full">
+                  <button type="submit" class="btn btn-primary" onclick="toggleConfigEdit()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                    Update Configuration
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="text-xs opacity-50 mt-2">
+              Total Fee = A + (B + D) × Amount
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleConfigEdit() {
+        $('#config-display').toggleClass('hidden');
+        $('#config-edit').toggleClass('hidden');
+      }
+    </script>
+
+    <!-- Merchants Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <!-- Add Merchant Form -->
+      <div class="card bg-base-200 shadow-xl backdrop-blur-sm">
+        <div class="card-body">
+          <h2 class="card-title text-primary">Add New Merchant</h2>
+          <form hx-on::config-request="if (event.detail.parameters.commission) {event.detail.parameters.commission = parseFloat(event.detail.parameters.commission)}" hx-on::after-request="if(event.detail.successful) { this.reset(); htmx.trigger('#merchants-table', 'refresh'); htmx.trigger('select[name=merchantId]', 'load'); htmx.trigger('body', 'refreshMerch') } else { showToast('Failed to add merchant', 'error') }">
+            <div class="form-control">
+              <label class="label">Merchant Name</label>
+              <input type="text" name="name" required class="input input-bordered input-primary">
+            </div>
+            <div class="form-control">
+              <label class="label">Commission (%)</label>
+              <input type="number" name="commission" required min="0" max="100" step="0.1" class="input input-bordered input-primary">
+            </div>
+            <button class="btn btn-primary mt-4" hx-post="/api/merchants" hx-ext="json-enc" hx-trigger="click" hx-include="closest form" hx-swap="none">Add Merchant</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Merchants Table -->
+      <div class="card bg-base-200 shadow-xl backdrop-blur-sm" id="merchants-section">
+        <div class="card-body">
+          <h2 class="card-title text-primary">Merchant List</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-zebra" id="merchants-table" hx-get="/api/merchants" hx-trigger="load, refresh from:body" hx-target="#merchants-body" hx-swap="innerHTML">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Commission (%)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="merchants-body" hx-swap="none">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payments Section -->
+    <div class="card bg-base-200 shadow-xl backdrop-blur-sm" id="payments-section">
+      <div class="card-body">
+        <h2 class="card-title text-primary">Payments</h2>
+
+        <!-- Add Payment Form -->
+        <div class="collapse bg-base-100 mb-4">
+          <input type="checkbox" />
+          <div class="collapse-title text-xl font-medium flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add New Payment
+          </div>
+          <div class="collapse-content">
+            <form class="grid grid-cols-1 md:grid-cols-2 gap-4" hx-on::config-request="if (event.detail.parameters.amount) {event.detail.parameters.amount = parseFloat(event.detail.parameters.amount)}" hx-on::after-request="if(event.detail.successful) { this.reset(); htmx.trigger('body', 'refreshPayment') } else { showToast('Failed to add payment', 'error') }">
+              <div class="form-control">
+                <label class="label">Merchant</label>
+                <select name="merchantId" required class="select select-bordered select-primary" hx-get="/api/merchants" hx-trigger="load, refreshMerch from:body" hx-target="this" hx-swap="innerHTML">
+                  <option value="">Select Merchant</option>
+                </select>
+              </div>
+
+              <div class="form-control">
+                <label class="label">Amount ($)</label>
+                <input type="number" name="amount" required min="0.01" step="0.01" class="input input-bordered input-primary" placeholder="Enter amount">
+              </div>
+
+              <div class="col-span-full">
+                <button class="btn btn-primary w-full" hx-post="/api/payments" hx-ext="json-enc" hx-trigger="click" hx-include="closest form" hx-swap="none">
+                  Create Payment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex flex-wrap gap-4 mb-4">
+          <select class="select select-bordered select-primary" hx-get="/api/payments" hx-trigger="change" hx-target="#payments-table">
+            <option value="">All Merchants</option>
+            <template id="merchant-option-template">
+              <option value="{id}">{name}</option>
+            </template>
+          </select>
+
+          <select name="status" class="select select-bordered select-primary" hx-get="/api/payments" hx-trigger="change" hx-target="#payments-body" hx-include="this">
+            <option value="">All Statuses</option>
+            <option value="accepted">Accepted</option>
+            <option value="processed">Processed</option>
+            <option value="executed">Executed</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
+
+        <!-- Payments Table -->
+        <div class="overflow-x-auto">
+          <table class="table table-zebra" id="payments-table" hx-get="/api/payments" hx-trigger="load, refreshPayment from:body" hx-target="#payments-body" hx-swap="innerHTML">
+            <thead>
+              <tr>
+                <th>
+                  <label>
+                    <input type="checkbox" class="checkbox" id="select-all-payments" />
+                  </label>
+                </th>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Amount</th>
+                <th>Available Balance</th>
+                <th>Status</th>
+                <!-- <th>Actions</th> -->
+              </tr>
+            </thead>
+            <tbody id="payments-body">
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bulk Actions -->
+        <div class="flex gap-4 mt-4" hx-swap="none" hx-ext="json-enc" hx-vals="js:{'paymentIds': Array.from(document.querySelectorAll('[name=selected-payments]:checked')).map(cb => cb.value)}">
+          <button class="btn btn-warning" hx-post="/api/payments/process" hx-on::after-request="if(event.detail.successful) { showToast('Success process paymants');htmx.trigger('body', 'refreshPayment') } else { showToast('Failed to process paymants', 'error') }">
+            Process Selected
+          </button>
+          <button class="btn btn-success" hx-post="/api/payments/execute" hx-on::after-request="if(event.detail.successful) { showToast('Success execute paymants');htmx.trigger('body', 'refreshPayment') } else { showToast('Failed to process paymants', 'error') }">
+            Execute Selected
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+
+  <script>
+    const isDev = false;
+    const testMerchantsJson = `[
+      {"id": 1, "name": "Merchant 1", "commission_percent": 10},
+      {"id": 2, "name": "Merchant 2", "commission_percent": 15},
+      {"id": 3, "name": "Merchant 3", "commission_percent": 20}
+  ]`;
+
+    // Fetch data on page load
+    document.addEventListener('DOMContentLoaded', function () {
+
+      htmx.on('#merchants-table', 'htmx:afterRequest', function (evt) {
+        if (evt.detail.successful) {
+          const data = JSON.parse(evt.detail.xhr.responseText);
+          document.getElementById('merchant-count').textContent = data.length;
+        }
+      });
+
+      htmx.on('select[name="merchantId"]', 'htmx:afterRequest', function (evt) {
+        if (evt.detail.successful) {
+          const merchants = JSON.parse(evt.detail.xhr.responseText);
+          let options = '<option value="">Select Merchant</option>';
+          merchants.forEach(m => {
+            options += `<option value="${m.id}">${m.name}</option>`;
+          });
+          evt.detail.target.innerHTML = options;
+        }
+      });
+
+      // Handle Config Display
+      htmx.on('[hx-get="/api/config"]', 'htmx:afterRequest', function (evt) {
+        if (evt.detail.successful) {
+          const config = JSON.parse(evt.detail.xhr.responseText);
+          $('#config-a').text(config.A);
+          $('#config-b').text(`${config.B}%`);
+          $('#config-d').text(`${config.D}%`);
+          // Update input fields in config form
+          $('input[name="A"]').val(config.A);
+          $('input[name="B"]').val(config.B);
+          $('input[name="D"]').val(config.D);
+        }
+      });
+
+      htmx.on('#merchants-table', 'htmx:beforeSwap', function (evt) {
+        console.log("merchants-table htmx:beforeSwap", evt, "Handle response =>", handResponse(evt));
+        if (evt.detail.isError) {
+          return;
+        }
+
+        const data = JSON.parse(isDev ? testMerchantsJson : evt.detail.xhr.responseText);
+        console.log("merchants-table htmx:beforeSwap data: ", data);
+
+
+        let rows = '';
+        data.forEach(m => {
+          rows += `
+                  <tr>
+                  <td>${m.id}</td>
+                  <td>${m.name}</td>
+                  <td>${m.commission_percent}%</td>
+                  <td>
+                      <button class="btn btn-xs btn-info"
+                              hx-post="/api/payouts"
+                              hx-ext="json-enc"
+                              hx-on::after-request="if(event.detail.successful) { showToast('Success process paymants');htmx.trigger('body', 'refreshPayment') } else { showToast('Failed to process paymants', 'error') }"
+                              hx-vals='{"merchantId": ${m.id}}'>
+                          Payout
+                      </button>
+                  </td>
+              </tr>
+              `;
+        });
+        event.detail.serverResponse = rows;
+      });
+
+      // Handle Payments Table Data
+      htmx.on('#payments-table', 'htmx:beforeSwap', function (evt) {
+        if (evt.detail.isError) {
+          return;
+        }
+        const data = JSON.parse(evt.detail.xhr.responseText);
+
+        // Calculate dashboard statistics
+        const stats = { totalAmount: 0, activePayments: 0, pendingPayouts: 0 };
+
+        for (const payment of data) {
+          stats.totalAmount += payment.amount;
+          if (payment.status !== 'paid') stats.activePayments++;
+          if (payment.status === 'executed') stats.pendingPayouts += payment.amount;
+        }
+
+        console.log("stats", stats);
+
+        // Update dashboard values
+        $('#payment-count').text(stats.activePayments);
+        $('#total-amount').text('$' + stats.totalAmount.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }));
+        $('#pending-payouts').text(stats.pendingPayouts.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }));
+
+        // Calculate active payments (not in 'paid' status)
+        const activePayments = data.filter(p => p.status !== 'paid').length;
+        document.getElementById('payment-count').textContent = activePayments;
+
+        let rows = '';
+        data.forEach(p => {
+          rows += `
+                  <tr>
+                  <td>
+                      <label>
+                          <input type="checkbox" class="checkbox" name="selected-payments" value="${p.id}" />
+                      </label>
+                  </td>
+                  <td>${p.id}</td>
+                  <td>${p.created_at}</td>
+                  <td>${p.merchant_id}</td>
+                  <td>$${p.amount.toLocaleString()}</td>
+                  <td>$${p.available_balance.toLocaleString()}</td>
+                  <td>
+                      <span class="badge badge-neutral status-badge status-${p.status}">${p.status}</span>
+                  </td>
+              </tr>
+              `;
+          //  <td class="flex flex-wrap lg:space-x-2">
+          //<button class="btn btn-xs btn-warning"
+          //  hx-post="/api/payments/process"
+          //  hx-vals='{"paymentIds": [${p.id}]}'>
+          //  Process
+          //</button>
+          //<button class="btn btn-xs btn-success"
+          //  hx-post="/api/payments/execute"
+          //  hx-vals='{"paymentIds": [${p.id}]}'>
+          //  Execute
+          //</button>
+          //</td>
+        });
+        event.detail.serverResponse = rows;
+      });
+
+      const headerCheckbox = document.querySelector('thead th input[type="checkbox"]');
+
+      headerCheckbox.addEventListener('change', function () {
+        // Get all checkboxes in the table body
+        const checkboxes = document.querySelectorAll('tbody input[name="selected-payments"]');
+
+        // Set all checkboxes to match the header checkbox state
+        checkboxes.forEach(checkbox => {
+          checkbox.checked = headerCheckbox.checked;
+        });
+      });
+    });
+
+    function handResponse(event) {
+      console.debug("handle response", event);
+      let respObj = tryJSONParse(event.detail.xhr.responseText)
+
+      switch (event.detail.xhr.status) {
+        case 200:
+        case 201:
+          showToast(respObj?.message || 'Operation successful');
+          return true;
+        case 400:
+          showToast(respObj?.error || respObj?.message || 'Operation failed', 'error');
+          return false;
+        default:
+          showToast('Request failed', 'error');
+          return false;
+      }
+    }
+
+    function tryJSONParse(data) {
+      try {
+        return JSON.parse(data);
+      } catch (error) {
+        console.debug('Failed to parse JSON:', error, 'Original data:', data);
+        return null;
+      }
+    }
+
+    // Toast notification function
+    function showToast(message, type = 'success') {
+      console.debug(`showToast: msg=[${message}] type=(${type})`);
+      const toast = $(`<div class="bg-transparent/50 mb-1 shadow-md font-medium rounded-lg border-0 animate__animated animate__backInRight"><p class="p-2 text-sm">${message}</p></div>`);
+
+      switch (type) {
+        case 'error': toast.addClass('shadow-red-500/90 text-red-500/70 border-pink-500/30'); break;
+        case 'success': toast.addClass('shadow-green-500/90 text-green-500/70 border-green-500/30'); break;
+        case 'warning': toast.addClass('shadow-amber-500/90 text-amber-500/70 border-amber-500/30'); break;
+        case 'info': toast.addClass('shadow-blue-500/90 text-blue-500/70 border-blue-500/30'); break;
+      }
+      $('#toast-container').append(toast);
+
+      setTimeout(() => {
+        toast.removeClass('animate__backInRight').addClass('animate__backOutRight');
+        setTimeout(() => toast.remove(), 1000);
+      }, 2500);
+    }
+
+  </script>
+</body>
+
+</html>
